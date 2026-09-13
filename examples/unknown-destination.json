@@ -1,0 +1,32 @@
+{
+  "query": "What are the visa requirements for Cairo?",
+  "model": "groq · openai/gpt-oss-120b",
+  "llm_turns": 1,
+  "tools_used": [],
+  "usage": {
+    "input": 1147,
+    "output": 109
+  },
+  "steps": [
+    {
+      "kind": "user_query",
+      "query": "What are the visa requirements for Cairo?"
+    },
+    {
+      "kind": "llm_turn",
+      "iteration": 1,
+      "stop_reason": "end_turn",
+      "reasoning": "The user asks about visa requirements for Cairo. Cairo is not among the four covered destinations (Tokyo, Reykjavik, Bangkok, Barcelona). According to instructions, we must say we don't have a guide for it and list the ones we have. No tool calls.",
+      "planned_calls": [],
+      "usage": {
+        "input_tokens": 1147,
+        "output_tokens": 109
+      }
+    },
+    {
+      "kind": "final_answer",
+      "answer": "I’m sorry—I don’t have a travel guide for Cairo. I can provide visa information for Tokyo, Reykjavik, Bangkok, or Barcelona if that would help. Let me know which of those destinations you’d like to learn about!",
+      "stop_reason": "end_turn"
+    }
+  ]
+}

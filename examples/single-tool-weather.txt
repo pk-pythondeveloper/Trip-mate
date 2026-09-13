@@ -1,0 +1,25 @@
+QUERY: How hot does Bangkok get in April?
+
+====================================================================
+REASONING TRACE  (groq · openai/gpt-oss-120b)
+====================================================================
+  QUERY: "How hot does Bangkok get in April?"
+
+  [1] LLM TURN -> stop_reason=tool_use
+      thinking aloud: User asks: "How hot does Bangkok get in April?" Need temperature range. Use get_weather_forecast for Bangkok, month April.
+      decided to call: get_weather_forecast
+
+      TOOL get_weather_forecast  [ok, 0.36ms]
+        args   : {"city": "Bangkok", "date_or_month": "April"}
+        result : {"available": true, "city": "Bangkok", "month": "April", "conditions": "very hot and humid, hottest month", "temp_range_c": [27, 36], "precipitation": "low", "daylight_hours": 12.5, "source": "mock-climate-table", "note": "Typical monthly climate normals, not a live forecast."}
+
+  [2] LLM TURN -> stop_reason=end_turn
+      decided no (further) tool is needed
+
+--------------------------------------------------------------------
+  SUMMARY: 2 LLM turn(s), tools used: get_weather_forecast, tokens in/out: 2415/131
+====================================================================
+
+FINAL ANSWER
+--------------------------------------------------------------------
+Bangkok in April is typically very hot and humid, with daytime temperatures ranging from about **27 °C to 36 °C**. It’s the hottest month of the year, and while precipitation is low, you can expect long, sunny days of roughly 12½ hours of daylight.

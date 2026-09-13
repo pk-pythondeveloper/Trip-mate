@@ -1,0 +1,57 @@
+{
+  "query": "Do I need a visa to visit Japan, and what are the local customs I should know?",
+  "model": "groq · openai/gpt-oss-120b",
+  "llm_turns": 2,
+  "tools_used": [
+    "search_destination_guide"
+  ],
+  "usage": {
+    "input": 2563,
+    "output": 344
+  },
+  "steps": [
+    {
+      "kind": "user_query",
+      "query": "Do I need a visa to visit Japan, and what are the local customs I should know?"
+    },
+    {
+      "kind": "llm_turn",
+      "iteration": 1,
+      "stop_reason": "tool_use",
+      "reasoning": "We need to answer about visa requirements for Japan and local customs. Use search_destination_guide with query including Tokyo (Japan). No weather needed. So call search_destination_guide.",
+      "planned_calls": [
+        "search_destination_guide"
+      ],
+      "usage": {
+        "input_tokens": 1158,
+        "output_tokens": 73
+      }
+    },
+    {
+      "kind": "tool_call",
+      "tool": "search_destination_guide",
+      "arguments": {
+        "query": "Tokyo visa and entry requirements and local customs"
+      },
+      "result": "{\"results\": [{\"city\": \"Tokyo\", \"section\": \"Local Customs\", \"text\": \"Bowing is a common greeting. Tipping is not customary and can even cause confusion. It's considered polite to be quiet on trains and to remove shoes when entering homes and certain traditional accommodations. Queuing in an orderly fashion is expected everywhere.\", \"relevance\": 0.356, \"citation\": \"Tokyo guide / Local Customs\"}, {\"city\": \"Tokyo\", \"section\": \"Visa & Entry\", \"text\": \"Many nationalities — including most EU countries, the UK, the US, Canada, and Australia — can enter Japan visa-free for short tourist stays (typically up to 90 days), though exact allowances vary by passport. Travelers should have a valid passport with sufficient remaining validity and often a return/onward ticket.\", \"relevance\": 0.354, \"citation\": \"Tokyo guide / Visa & Entry\"}], \"covered_cities\": [\"Bangkok\", \"Barcelona\", \"Reykjavik\", \"Tokyo\"]}",
+      "is_error": false,
+      "duration_ms": 0.61
+    },
+    {
+      "kind": "llm_turn",
+      "iteration": 2,
+      "stop_reason": "end_turn",
+      "reasoning": "",
+      "planned_calls": [],
+      "usage": {
+        "input_tokens": 1405,
+        "output_tokens": 271
+      }
+    },
+    {
+      "kind": "final_answer",
+      "answer": "Most travelers from the U.S., Canada, the U.K., the EU, Australia and many other countries can visit Japan without a visa for short‑term tourism—usually up to 90 days. Just bring a passport that’s valid for the duration of your stay (and often a bit beyond) and be prepared to show a return or onward ticket. Check the official Japanese consular site for the exact rules that apply to your passport.\n\nWhen you’re in Tokyo (and the rest of Japan), a few etiquette basics will help you blend in smoothly:\n\n* **Bowing** is the standard greeting and sign of respect; a slight bow is enough for casual encounters.  \n* **Tipping** isn’t customary and can even be confusing, so you can leave a tip only if you’re at a very high‑end international hotel that explicitly accepts it.  \n* **Quiet on public transport**—keep phone conversations low‑key and set phones to silent.  \n* **Shoes off** when entering homes, traditional inns (ryokan), temples, and some restaurants; you’ll often be offered slippers.  \n* **Queue orderly** at stations, elevators, and ticket counters; Japanese people value orderly lines.  \n\nFollowing these simple customs will make your visit smoother and show respect for local culture. Safe travels!",
+      "stop_reason": "end_turn"
+    }
+  ]
+}

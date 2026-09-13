@@ -1,0 +1,32 @@
+{
+  "query": "What should I pack?",
+  "model": "groq · openai/gpt-oss-120b",
+  "llm_turns": 1,
+  "tools_used": [],
+  "usage": {
+    "input": 1144,
+    "output": 80
+  },
+  "steps": [
+    {
+      "kind": "user_query",
+      "query": "What should I pack?"
+    },
+    {
+      "kind": "llm_turn",
+      "iteration": 1,
+      "stop_reason": "end_turn",
+      "reasoning": "The user asks \"What should I pack?\" No city or month specified. Need clarification. According to instructions, if ambiguous, ask a short clarifying question. So ask which destination and month.",
+      "planned_calls": [],
+      "usage": {
+        "input_tokens": 1144,
+        "output_tokens": 80
+      }
+    },
+    {
+      "kind": "final_answer",
+      "answer": "Could you let me know which city you’re traveling to and the month you’ll be there? That’ll help me give you the most useful packing advice.",
+      "stop_reason": "end_turn"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+QUERY: Can you book me a flight to Tokyo next Tuesday?
+
+====================================================================
+REASONING TRACE  (groq · openai/gpt-oss-120b)
+====================================================================
+  QUERY: "Can you book me a flight to Tokyo next Tuesday?"
+
+  [1] LLM TURN -> stop_reason=end_turn
+      thinking aloud: The user asks to book a flight. According to policy, we cannot take actions like booking. Must respond that we cannot book, but can help with planning. So answer: cannot book, can provide advice, etc.
+      decided no (further) tool is needed
+
+--------------------------------------------------------------------
+  SUMMARY: 1 LLM turn(s), tools used: none, tokens in/out: 1150/116
+====================================================================
+
+FINAL ANSWER
+--------------------------------------------------------------------
+I’m not able to make bookings or reservations. However, I can help you plan your trip to Tokyo—whether you’d like tips on visa requirements, the best time to visit, what to pack, or anything else you need to know before you book your flight. Let me know how I can assist!

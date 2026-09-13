@@ -1,0 +1,21 @@
+# --- core ---------------------------------------------------------------
+numpy>=1.26              # in-memory vector store + cosine similarity
+
+# --- LLM providers ------------------------------------------------------
+# Only the one you actually use is needed; both are imported lazily and
+# selected by TRIPMATE_PROVIDER. Groq is the default: free tier, no card,
+# native parallel tool calling.
+groq>=0.11               # default provider
+anthropic>=0.40.0        # alternative provider (TRIPMATE_PROVIDER=anthropic)
+
+# --- retrieval ----------------------------------------------------------
+# Semantic embeddings, downloaded once and run locally: no API key, no server.
+# If this is not installed TripMate falls back to a pure-numpy lexical
+# embedder (see tripmate/rag/embedder.py), so the app still runs.
+sentence-transformers>=3.0
+
+# --- convenience --------------------------------------------------------
+python-dotenv>=1.0       # optional: loads .env in local development
+
+# --- testing ------------------------------------------------------------
+pytest>=8.0

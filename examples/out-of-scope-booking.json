@@ -1,0 +1,32 @@
+{
+  "query": "Can you book me a flight to Tokyo next Tuesday?",
+  "model": "groq · openai/gpt-oss-120b",
+  "llm_turns": 1,
+  "tools_used": [],
+  "usage": {
+    "input": 1150,
+    "output": 116
+  },
+  "steps": [
+    {
+      "kind": "user_query",
+      "query": "Can you book me a flight to Tokyo next Tuesday?"
+    },
+    {
+      "kind": "llm_turn",
+      "iteration": 1,
+      "stop_reason": "end_turn",
+      "reasoning": "The user asks to book a flight. According to policy, we cannot take actions like booking. Must respond that we cannot book, but can help with planning. So answer: cannot book, can provide advice, etc.",
+      "planned_calls": [],
+      "usage": {
+        "input_tokens": 1150,
+        "output_tokens": 116
+      }
+    },
+    {
+      "kind": "final_answer",
+      "answer": "I’m not able to make bookings or reservations. However, I can help you plan your trip to Tokyo—whether you’d like tips on visa requirements, the best time to visit, what to pack, or anything else you need to know before you book your flight. Let me know how I can assist!",
+      "stop_reason": "end_turn"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+QUERY: What should I pack?
+
+====================================================================
+REASONING TRACE  (groq · openai/gpt-oss-120b)
+====================================================================
+  QUERY: "What should I pack?"
+
+  [1] LLM TURN -> stop_reason=end_turn
+      thinking aloud: The user asks "What should I pack?" No city or month specified. Need clarification. According to instructions, if ambiguous, ask a short clarifying question. So ask which destination and month.
+      decided no (further) tool is needed
+
+--------------------------------------------------------------------
+  SUMMARY: 1 LLM turn(s), tools used: none, tokens in/out: 1144/80
+====================================================================
+
+FINAL ANSWER
+--------------------------------------------------------------------
+Could you let me know which city you’re traveling to and the month you’ll be there? That’ll help me give you the most useful packing advice.
