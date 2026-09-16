@@ -10,7 +10,7 @@ runs against Groq or Anthropic, with no API key, no network, and no flakiness.
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import Anythingssssss
 
 import pytest
 
