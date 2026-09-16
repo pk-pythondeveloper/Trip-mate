@@ -22,6 +22,28 @@ from tripmate.tools.errors import ToolError, ToolInputError, ToolNotFoundError
 
 log = get_logger(__name__)
 
+# JSON-schema type name -> the Python types that satisfy it. `bool` is excluded
+# from the numeric types on purpose: it is an int subclass in Python, but a
+# model sending `true` for a temperature means something has gone wrong.
+_JSON_TYPES: dict[str, tuple[type, ...]] = {
+    "string": (str,),
+    "integer": (int,),
+    "number": (int, float),
+    "boolean": (bool,),
+    "array": (list,),
+    "object": (dict,),
+    "null": (type(None),),
+}
+
+
+def _matches_type(value: Any, json_type: str) -> bool:
+    expected = _JSON_TYPES.get(json_type)
+    if expected is None:  # a type we do not police; let the handler decide
+        return True
+    if json_type != "boolean" and isinstance(value, bool):
+        return False
+    return isinstance(value, expected)
+
 
 @dataclass(frozen=True)
 class Tool:
@@ -87,6 +109,25 @@ class ToolRegistry:
                 f"Unexpected argument(s) for '{tool.name}': {', '.join(unexpected)}. "
                 f"Accepted: {', '.join(properties)}."
             )
+
+        # Type-check here rather than in each handler: the schema already
+        # states the contract, and enforcing it centrally means every future
+        # tool gets the same wording for free -- and the model gets told the
+        # type it should have sent, which is what it needs to retry.
+        for name, value in arguments.items():
+            declared = properties.get(name, {}).get("type")
+            if isinstance(declared, str) and not _matches_type(value, declared):
+                raise ToolInputError(
+                    f"Argument '{name}' for '{tool.name}' must be of type "
+                    f"{declared}, got {type(value).__name__}."
+                )
+
+            enum = properties.get(name, {}).get("enum")
+            if isinstance(enum, list) and value not in enum:
+                raise ToolInputError(
+                    f"Argument '{name}' for '{tool.name}' must be one of: "
+                    f"{', '.join(map(str, enum))}. Got {value!r}."
+                )
 
     def dispatch(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
         """Run one tool. Never raises -- failures come back as error outcomes."""

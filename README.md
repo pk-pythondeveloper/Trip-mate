@@ -84,7 +84,7 @@ python -m tripmate "Do I need a visa for Japan?"
 # with the reasoning trace (Module 1)
 python -m tripmate --verbose "What should I pack for Reykjavik in December?"
 
-# interactive
+# interactive -- the REPL carries the conversation, so follow-ups resolve
 python -m tripmate --interactive
 
 # write the structured trace to a file
@@ -94,6 +94,33 @@ python -m tripmate --trace-json out.json "Is July a good time for Barcelona?"
 The answer goes to **stdout**; structured JSON logs go to **stderr**, so
 `python -m tripmate "..." > answer.txt` does the obvious thing. Add
 `--quiet-logs` to silence the logs entirely.
+
+In the REPL each answer is carried into the next question, so `"How warm is
+Tokyo in May?"` followed by `"And Bangkok?"` resolves. Type `new` to start a
+fresh conversation, `exit` or Ctrl-D to quit. One-shot runs are unaffected:
+`run()` still defaults to an empty history.
+
+### Configuration
+
+Everything is read from the environment; nothing is hardcoded in logic. See
+[config.py](tripmate/config.py).
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `TRIPMATE_PROVIDER` | `groq` | `groq` or `anthropic` |
+| `GROQ_API_KEY` / `ANTHROPIC_API_KEY` | — | key for the selected provider |
+| `TRIPMATE_MODEL` | per provider | override the model id |
+| `TRIPMATE_MAX_TOKENS` | `4096` | output cap per request |
+| `TRIPMATE_TEMPERATURE` | `0.2` | low for routing determinism |
+| `TRIPMATE_MAX_ITERATIONS` | `6` | hard ceiling on agent loop turns |
+| `TRIPMATE_MAX_HISTORY_TURNS` | `6` | user turns the REPL carries forward |
+| `TRIPMATE_TIMEOUT_S` | `60` | per-request timeout |
+| `TRIPMATE_TOP_K` | `3` | chunks retrieved per search |
+| `TRIPMATE_MIN_SIMILARITY` | per embedder | override the relevance floor |
+| `TRIPMATE_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model |
+| `TRIPMATE_DATA_DIR` | `./data` | where the guides live |
+| `TRIPMATE_LOG_LEVEL` | `INFO` | an unrecognised value warns and uses `INFO` |
+| `TRIPMATE_LOG_FILE` | — | also append JSON logs to this path |
 
 ---
 
@@ -126,14 +153,15 @@ without an API key.
 ### The agent loop
 
 ```python
-history = [UserTurn(query)]
+history = [*prior, UserTurn(query)]             # `prior` is [] for a one-shot
 
 for iteration in range(1, config.max_iterations + 1):
     response = provider.complete(
         system=SYSTEM_PROMPT, history=history, tools=registry.specs()
     )
     if not response.tool_calls:
-        return response.text                    # the model is done
+        history.append(AssistantTurn(response))
+        return response.text, history           # the model is done
 
     history.append(AssistantTurn(response))
     results = [
@@ -143,7 +171,7 @@ for iteration in range(1, config.max_iterations + 1):
     history.append(ToolResultsTurn(results))    # ← one turn, every result
 ```
 
-Three details that matter more than they look:
+Four details that matter more than they look:
 
 1. **Every parallel result travels in one `ToolResultsTurn`.** How that reaches
    the wire is the provider's business, and the two vendors genuinely differ:
@@ -154,7 +182,15 @@ Three details that matter more than they look:
 2. **The assistant turn keeps its provider-native content** (`LLMResponse.raw`),
    so Anthropic thinking blocks and tool-call ids survive verbatim into the next
    request.
-3. **The loop imports no vendor SDK.** `orchestrator.py` references only the
+3. **The conversation is returned, not retained.** `run()` takes an optional
+   `history` and hands back the one to use next, so the agent itself stays
+   stateless: the REPL gets follow-ups, and one-shot callers keep the old
+   behaviour by ignoring the field. Only a turn that ended with real assistant
+   text is handed back — a turn that failed, was refused, or tripped the loop
+   guard ends on an unanswered tool call, which both wire formats reject on
+   replay, so it is dropped instead. Trimming likewise cuts only at `UserTurn`
+   boundaries, the one place that cannot separate a tool call from its result.
+4. **The loop imports no vendor SDK.** `orchestrator.py` references only the
    neutral types in `llm/base.py`, which is why swapping vendors touches one
    file and breaks no tests.
 
@@ -645,9 +681,13 @@ the fallback.
   The semantic embedder handles it; this is exactly the gap it exists to close.
 - **Weather is climate normals, not a forecast.** It cannot answer "will it rain
   next Tuesday". The tool description says so, and the payload carries a `note`.
-- **No conversational memory.** Each `run()` is independent, so "what about in
-  July?" won't resolve against the previous turn. The loop keeps `messages`
-  internally, so persisting it across calls is the natural next step.
+- **Conversational memory is bounded and in-process.** The REPL carries the
+  last `TRIPMATE_MAX_HISTORY_TURNS` exchanges (default 6) and nothing is
+  persisted between processes. History is trimmed only at user-turn
+  boundaries, because slicing mid-exchange would orphan a tool call from its
+  result and both wire formats reject that. A turn that failed or hit the loop
+  guard is dropped rather than replayed, since it ends on an unanswered tool
+  call.
 - **Four cities.** Everything outside them is correctly declined, not answered.
 - **Single-city weather calls.** Comparing two cities takes two calls; the model
   handles that with parallel calls, but a `cities: list[str]` parameter would be
@@ -660,7 +700,8 @@ the fallback.
 
 ## Future improvements
 
-1. **Conversational memory** — persist `messages` across turns for follow-ups.
+1. **Persistent conversations** — in-process history landed (see the REPL);
+   writing it to disk would let a session survive a restart.
 2. **Citations in the answer** — the retriever already returns a `citation` per
    chunk; surfacing them inline would make the RAG grounding checkable by the user.
 3. **Prompt caching** on the stable tools+system prefix — the single highest-value

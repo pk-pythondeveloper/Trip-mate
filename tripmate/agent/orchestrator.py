@@ -12,7 +12,7 @@ run unchanged against a different provider or an entirely different tool set.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tripmate.agent.prompts import SYSTEM_PROMPT
 from tripmate.agent.trace import Trace
@@ -44,6 +44,10 @@ _PROVIDER_FAILURE = (
 class AgentResponse:
     answer: str
     trace: Trace
+    # The conversation to carry into the next `run()`. A caller that wants
+    # one-shot behaviour simply ignores it, which is why `run()` still
+    # defaults to a fresh conversation.
+    history: list[Turn] = field(default_factory=list)
 
     @property
     def tools_used(self) -> list[str]:
@@ -80,34 +84,61 @@ class TripMateAgent:
             )
         return None
 
-    def run(self, query: str) -> AgentResponse:
+    def _trim(self, history: list[Turn]) -> list[Turn]:
+        """Drop the oldest exchanges, cutting only at user-turn boundaries.
+
+        An assistant turn carrying tool calls and the `ToolResultsTurn` that
+        answers it are one indivisible unit: both wire formats reject a tool
+        call with no matching result. Slicing at a `UserTurn` can never split
+        that pair, so it is the only safe cut point.
+        """
+        limit = max(1, self.config.max_history_turns)
+        starts = [i for i, turn in enumerate(history) if isinstance(turn, UserTurn)]
+        if len(starts) <= limit:
+            return list(history)
+        return list(history[starts[-limit] :])
+
+    def run(self, query: str, *, history: list[Turn] | None = None) -> AgentResponse:
+        """Answer one question, optionally continuing a prior conversation.
+
+        `history` is what a previous call returned as `AgentResponse.history`.
+        Pass it to get follow-ups ("and what about Bangkok?"); omit it for a
+        one-shot answer.
+        """
+        prior: list[Turn] = self._trim(list(history or []))
+
+        query = sanitize_query(query)
         trace = Trace(
-            query=query if isinstance(query, str) else repr(query),
+            query=query,
             model=f"{self.provider.name} · {self.provider.model}",
         )
 
-        query = sanitize_query(query)
         rejection = self._validate_query(query)
         if rejection:
             log.info("agent.rejected_input", extra={"reason": rejection})
             trace.add("error", stage="input_validation", message=rejection)
             trace.add("final_answer", answer=rejection)
-            return AgentResponse(answer=rejection, trace=trace)
+            return AgentResponse(answer=rejection, trace=trace, history=prior)
 
         query = query.strip()
         trace.add("user_query", query=query)
         log.info(
             "agent.start",
-            extra={"query": query, "provider": self.provider.name, "model": self.provider.model},
+            extra={
+                "query": query,
+                "provider": self.provider.name,
+                "model": self.provider.model,
+                "prior_turns": len(prior),
+            },
         )
 
-        history: list[Turn] = [UserTurn(query)]
+        history_turns: list[Turn] = [*prior, UserTurn(query)]
         tools = self.registry.specs()
 
         for iteration in range(1, self.config.max_iterations + 1):
             try:
                 response = self.provider.complete(
-                    system=SYSTEM_PROMPT, history=history, tools=tools
+                    system=SYSTEM_PROMPT, history=history_turns, tools=tools
                 )
             except Exception as exc:  # noqa: BLE001 -- classified by the provider
                 message = self.provider.describe_error(exc)
@@ -118,7 +149,7 @@ class TripMateAgent:
                 )
                 trace.add("error", stage="llm_call", message=message)
                 trace.add("final_answer", answer=_PROVIDER_FAILURE)
-                return AgentResponse(answer=_PROVIDER_FAILURE, trace=trace)
+                return AgentResponse(answer=_PROVIDER_FAILURE, trace=trace, history=prior)
 
             trace.add(
                 "llm_turn",
@@ -145,7 +176,7 @@ class TripMateAgent:
                     "try rephrasing it and I will do my best."
                 )
                 trace.add("final_answer", answer=answer)
-                return AgentResponse(answer=answer, trace=trace)
+                return AgentResponse(answer=answer, trace=trace, history=prior)
 
             if not response.tool_calls:
                 # No tool needed, or the model is done: this is the answer.
@@ -159,9 +190,15 @@ class TripMateAgent:
                     "agent.done",
                     extra={"iterations": iteration, "tools_used": trace.tools_used},
                 )
-                return AgentResponse(answer=answer, trace=trace)
+                # Only a turn that closed with real assistant text is safe to
+                # replay: an empty assistant message is rejected by the wire
+                # formats, and we would be feeding back our own placeholder.
+                if response.text:
+                    history_turns.append(AssistantTurn(response))
+                    return AgentResponse(answer=answer, trace=trace, history=history_turns)
+                return AgentResponse(answer=answer, trace=trace, history=prior)
 
-            history.append(AssistantTurn(response))
+            history_turns.append(AssistantTurn(response))
 
             results: list[ToolResult] = []
             for call in response.tool_calls:
@@ -186,7 +223,7 @@ class TripMateAgent:
             # One turn carrying every result. How that reaches the wire is the
             # provider's business -- Anthropic batches them into a single user
             # message, OpenAI-shaped APIs emit one `tool` message each.
-            history.append(ToolResultsTurn(results))
+            history_turns.append(ToolResultsTurn(results))
 
         # Loop guard tripped: the model kept requesting tools without settling.
         answer = (
@@ -198,4 +235,6 @@ class TripMateAgent:
             "error", stage="loop_guard", message=f"Hit max_iterations={self.config.max_iterations}"
         )
         trace.add("final_answer", answer=answer)
-        return AgentResponse(answer=answer, trace=trace)
+        # The loop ended on an unanswered tool call, so this exchange cannot be
+        # replayed. Hand back the conversation as it stood before it.
+        return AgentResponse(answer=answer, trace=trace, history=prior)

@@ -39,11 +39,20 @@ _STOP_REASONS: dict[str, StopReason] = {
 
 
 class GroqProvider:
-    def __init__(self, api_key: str, model: str, timeout: float) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        timeout: float,
+        max_tokens: int,
+        temperature: float,
+    ) -> None:
         from groq import Groq  # imported lazily so the dep stays optional
 
         self.name = "groq"
         self.model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
         self._client = Groq(api_key=api_key, timeout=timeout)
 
     # --- request shaping --------------------------------------------------
@@ -116,8 +125,8 @@ class GroqProvider:
             tools=self._tools_to_wire(tools),
             tool_choice="auto",
             parallel_tool_calls=True,  # required for the two-tool packing flow
-            max_tokens=4096,
-            temperature=0.2,
+            max_tokens=self._max_tokens,
+            temperature=self._temperature,
         )
         return self._parse(completion)
 

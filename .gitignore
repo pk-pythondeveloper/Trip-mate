@@ -10,3 +10,9 @@ env/
 *.log
 # ...but the generated example trace log IS a deliverable.
 !examples/tripmate.log
+
+# Stray local artifacts
+out.json
+
+# A JDK was once unpacked here by accident. TripMate is pure Python.
+oracleJdk-27/

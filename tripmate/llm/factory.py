@@ -31,7 +31,11 @@ def build_provider(config: Config) -> LLMProvider:
 
         try:
             provider: LLMProvider = GroqProvider(
-                api_key=api_key, model=config.model, timeout=config.request_timeout_s
+                api_key=api_key,
+                model=config.model,
+                timeout=config.request_timeout_s,
+                max_tokens=config.max_tokens,
+                temperature=config.temperature,
             )
         except ImportError as exc:
             raise ProviderError(

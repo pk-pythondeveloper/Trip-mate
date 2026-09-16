@@ -58,6 +58,12 @@ class Config:
     api_key: str | None = None  # resolved in __post_init__ from the provider
     model: str = ""  # resolved in __post_init__ unless TRIPMATE_MODEL is set
     max_tokens: int = field(default_factory=lambda: _env_int("TRIPMATE_MAX_TOKENS", 4096))
+    # Low but non-zero: tool routing wants determinism, the final prose does
+    # not want to read like a template. Only providers that expose the knob
+    # use it -- Anthropic's adaptive thinking sets its own.
+    temperature: float = field(
+        default_factory=lambda: _env_float("TRIPMATE_TEMPERATURE", 0.2) or 0.2
+    )
 
     # --- Orchestration guards -----------------------------------------
     # Hard ceiling on agent loop turns. Without this a confused model can
@@ -65,6 +71,12 @@ class Config:
     max_iterations: int = field(default_factory=lambda: _env_int("TRIPMATE_MAX_ITERATIONS", 6))
     request_timeout_s: float = field(
         default_factory=lambda: _env_float("TRIPMATE_TIMEOUT_S", 60.0) or 60.0
+    )
+    # How many previous user turns the REPL carries forward. Bounded because
+    # every turn is re-sent in full on each request, so unbounded history is
+    # unbounded cost.
+    max_history_turns: int = field(
+        default_factory=lambda: _env_int("TRIPMATE_MAX_HISTORY_TURNS", 6)
     )
 
     # --- RAG -----------------------------------------------------------
