@@ -19,9 +19,19 @@ _STANDARD_ATTRS = set(
 ) | {"asctime", "message", "taskName"}
 
 
+# Structured fields whose *name* implies a credential. Matched on whole
+# underscore-separated words, not substrings: a bare `in` test also redacts
+# `input_tokens` ("token") and `chunk_ids` -- silently gutting the very trace
+# fields the logs exist for.
+_SENSITIVE_WORDS = {"apikey", "key", "token", "secret", "password", "credential", "authorization"}
+
+
+def _is_sensitive(field_name: str) -> bool:
+    words = field_name.lower().replace("-", "_").split("_")
+    return any(w in _SENSITIVE_WORDS for w in words)
+
+
 class JsonFormatter(logging.Formatter):
-    _SENSITIVE_KEYS = {'api_key', 'key', 'token', 'secret', 'password'}
-    
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
@@ -31,9 +41,7 @@ class JsonFormatter(logging.Formatter):
         }
         for key, value in record.__dict__.items():
             if key not in _STANDARD_ATTRS:
-                if any(s in key.lower() for s in self._SENSITIVE_KEYS):
-                    value = "[REDACTED]"
-                payload[key] = value
+                payload[key] = "[REDACTED]" if _is_sensitive(key) else value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False, default=str)
@@ -50,10 +58,22 @@ def force_utf8_output() -> None:
                 pass
 
 
+def resolve_level(level: str, *, fallback: int = logging.INFO) -> int:
+    """Turn a level name into a level number, tolerating a bad one.
+
+    `TRIPMATE_LOG_LEVEL=verbose` is a plausible typo, and a logging
+    misconfiguration bringing down the whole CLI with a traceback is the wrong
+    trade. Fall back to INFO and say so once we have somewhere to say it.
+    """
+    resolved = logging.getLevelName(str(level).strip().upper())
+    return resolved if isinstance(resolved, int) else fallback
+
+
 def setup_logging(level: str = "INFO", log_file: Path | None = None) -> None:
     """Initialize logging with JSON formatter."""
+    resolved = resolve_level(level)
     root = logging.getLogger()
-    root.setLevel(level.upper())
+    root.setLevel(resolved)
     for handler in list(root.handlers):
         root.removeHandler(handler)
 
@@ -69,6 +89,11 @@ def setup_logging(level: str = "INFO", log_file: Path | None = None) -> None:
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("anthropic").setLevel(logging.WARNING)
+
+    if resolve_level(level, fallback=-1) == -1:
+        logging.getLogger(__name__).warning(
+            "logging.unknown_level", extra={"requested": level, "using": "INFO"}
+        )
 
 
 def get_logger(name: str) -> logging.Logger:

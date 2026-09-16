@@ -210,3 +210,91 @@ def test_config_picks_the_default_model_per_provider(monkeypatch):
 def test_config_lets_the_model_be_overridden(monkeypatch):
     monkeypatch.setenv("TRIPMATE_MODEL", "some-other-model")
     assert Config(provider="groq", api_key="k").model == "some-other-model"
+
+
+# --- configuration actually reaching the wire -----------------------------
+
+
+def _stub_groq_client(captured: dict):
+    """A drop-in for `GroqProvider._client` that records the request kwargs."""
+    from types import SimpleNamespace
+
+    class _Completions:
+        @staticmethod
+        def create(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(content="ok", tool_calls=None, reasoning=None),
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+            )
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+
+
+def test_groq_sends_the_configured_max_tokens_and_temperature():
+    """These used to be hardcoded, so TRIPMATE_MAX_TOKENS silently did nothing."""
+    pytest.importorskip("groq")
+    provider = GroqProvider(
+        api_key="k", model="m", timeout=1.0, max_tokens=512, temperature=0.75
+    )
+    captured: dict = {}
+    provider._client = _stub_groq_client(captured)
+
+    provider.complete(system="S", history=[UserTurn("hi")], tools=TOOLS)
+
+    assert captured["max_tokens"] == 512
+    assert captured["temperature"] == 0.75
+
+
+def test_factory_hands_groq_the_configured_limits():
+    pytest.importorskip("groq")
+    config = Config(provider="groq", api_key="k", model="m", max_tokens=99, temperature=0.9)
+    provider = build_provider(config)
+    assert provider._max_tokens == 99
+    assert provider._temperature == 0.9
+
+
+def test_temperature_falls_back_when_the_env_var_is_junk(monkeypatch):
+    monkeypatch.setenv("TRIPMATE_TEMPERATURE", "hot")
+    assert Config(provider="groq", api_key="k").temperature == 0.2
+
+
+def test_a_carried_conversation_stays_valid_on_both_wires(config, registry):
+    """The REPL replays several exchanges. Anthropic requires strictly
+    alternating roles, so a dropped or duplicated turn is a hard 400."""
+    from tests.conftest import ScriptedProvider
+    from tripmate.agent.orchestrator import TripMateAgent
+
+    history: list = []
+    for n, city in enumerate(("Tokyo", "Bangkok", "Barcelona")):
+        provider = ScriptedProvider(
+            [
+                llm_response(
+                    tool_calls=[
+                        tool_call("get_weather_forecast", {"city": city, "date_or_month": "May"}, f"tc_{n}")
+                    ]
+                ),
+                llm_response(f"{city} in May is pleasant."),
+            ]
+        )
+        agent = TripMateAgent(config, registry=registry, provider=provider)
+        history = agent.run(f"How warm is {city} in May?", history=history).history
+
+    anthropic_wire = AnthropicProvider._history_to_wire(history)
+    roles = [m["role"] for m in anthropic_wire]
+    assert roles[0] == "user"
+    assert all(a != b for a, b in zip(roles, roles[1:])), f"roles must alternate, got {roles}"
+
+    groq_wire = GroqProvider._history_to_wire("SYSTEM", history)
+    # Every `tool` message must follow an assistant turn that requested it.
+    open_ids: set[str] = set()
+    for message in groq_wire:
+        if message["role"] == "assistant":
+            open_ids |= {c["id"] for c in message.get("tool_calls") or []}
+        elif message["role"] == "tool":
+            assert message["tool_call_id"] in open_ids, "orphaned tool result"

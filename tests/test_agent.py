@@ -16,6 +16,7 @@ import pytest
 
 from tests.conftest import FailingProvider, ScriptedProvider, llm_response, tool_call
 from tripmate.agent.orchestrator import TripMateAgent
+from tripmate.config import Config
 from tripmate.llm.base import AssistantTurn, ToolResultsTurn, UserTurn
 
 
@@ -324,3 +325,95 @@ def test_the_trace_serialises_to_json(config, registry):
     provider = ScriptedProvider([llm_response("Hello.")])
     response = build_agent(config, registry, provider).run("hi")
     assert json.loads(response.trace.to_json())["query"] == "hi"
+
+
+# --- multi-turn conversation ---------------------------------------------
+
+
+def test_a_follow_up_sees_the_previous_exchange(config, registry):
+    """Without this the REPL restarts cold every turn, and the system prompt's
+    promise of answerable follow-ups is a lie."""
+    first = ScriptedProvider([llm_response("Tokyo is warm in May.")])
+    turn_one = build_agent(config, registry, first).run("How warm is Tokyo in May?")
+
+    second = ScriptedProvider([llm_response("Bangkok is hotter.")])
+    build_agent(config, registry, second).run("And Bangkok?", history=turn_one.history)
+
+    sent = second.calls[0]["history"]
+    assert [type(t).__name__ for t in sent] == ["UserTurn", "AssistantTurn", "UserTurn"]
+    assert sent[0].text == "How warm is Tokyo in May?"
+    assert sent[2].text == "And Bangkok?"
+
+
+def test_a_tool_using_turn_is_replayable_in_full(config, registry):
+    provider = ScriptedProvider(
+        [
+            llm_response(tool_calls=[tool_call("search_destination_guide", {"query": "Tokyo visa"}, "tc_a")]),
+            llm_response("Visa-free for 90 days."),
+        ]
+    )
+    result = build_agent(config, registry, provider).run("Do I need a visa for Japan?")
+
+    kinds = [type(t).__name__ for t in result.history]
+    assert kinds == ["UserTurn", "AssistantTurn", "ToolResultsTurn", "AssistantTurn"]
+    # Every tool call must be answered, or both wire formats reject the replay.
+    call_ids = {c.id for t in result.history if isinstance(t, AssistantTurn) for c in t.response.tool_calls}
+    result_ids = {r.id for t in result.history if isinstance(t, ToolResultsTurn) for r in t.results}
+    assert call_ids == result_ids
+
+
+def test_history_is_trimmed_at_user_turn_boundaries(config, registry):
+    """Trimming mid-exchange would orphan a tool call from its result."""
+    trimmed = Config(provider="groq", api_key="k", model="m", max_history_turns=2)
+    history = []
+    for n in range(4):
+        provider = ScriptedProvider(
+            [
+                llm_response(tool_calls=[tool_call("search_destination_guide", {"query": f"q{n}"}, f"tc_{n}")]),
+                llm_response(f"Answer {n}."),
+            ]
+        )
+        history = build_agent(trimmed, registry, provider).run(f"Question {n}?", history=history).history
+
+    user_turns = [t for t in history if isinstance(t, UserTurn)]
+    assert len(user_turns) <= 3  # 2 carried forward + the current one
+    assert isinstance(history[0], UserTurn), "a replay must start on a user turn"
+
+    call_ids = {c.id for t in history if isinstance(t, AssistantTurn) for c in t.response.tool_calls}
+    result_ids = {r.id for t in history if isinstance(t, ToolResultsTurn) for r in t.results}
+    assert call_ids == result_ids, "trimming must not orphan a tool call"
+
+
+def test_a_failed_turn_does_not_poison_the_conversation(config, registry):
+    """A turn that died mid-tool-call cannot be replayed, so it is dropped."""
+    good = ScriptedProvider([llm_response("Tokyo is warm in May.")])
+    healthy = build_agent(config, registry, good).run("How warm is Tokyo in May?").history
+
+    broken = build_agent(config, registry, FailingProvider(ConnectionError("down")))
+    after = broken.run("And Bangkok?", history=healthy)
+
+    assert after.history == healthy, "the failed exchange must leave no trace in history"
+
+
+def test_an_empty_assistant_answer_is_not_carried_forward(config, registry):
+    """An assistant message with no content is rejected by both wire formats."""
+    provider = ScriptedProvider([llm_response("")])
+    result = build_agent(config, registry, provider).run("Hello?")
+    assert result.history == []
+    assert result.answer  # the user still gets a usable fallback
+
+
+def test_a_rejected_query_leaves_history_untouched(config, registry):
+    good = ScriptedProvider([llm_response("Tokyo is warm in May.")])
+    healthy = build_agent(config, registry, good).run("How warm is Tokyo in May?").history
+
+    idle = ScriptedProvider([])
+    after = build_agent(config, registry, idle).run("   ", history=healthy)
+    assert after.history == healthy
+    assert idle.calls == [], "a rejected query must never reach the provider"
+
+
+def test_run_still_defaults_to_a_fresh_conversation(config, registry):
+    provider = ScriptedProvider([llm_response("Answer.")])
+    build_agent(config, registry, provider).run("Tell me about Tokyo")
+    assert len(provider.calls[0]["history"]) == 1

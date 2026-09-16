@@ -17,7 +17,7 @@ from pathlib import Path
 
 from tripmate.agent.orchestrator import TripMateAgent
 from tripmate.config import ConfigError, load_config
-from tripmate.llm.base import ProviderError
+from tripmate.llm.base import ProviderError, Turn
 from tripmate.logging_setup import force_utf8_output, setup_logging
 
 
@@ -54,8 +54,14 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _answer_once(agent: TripMateAgent, query: str, args: argparse.Namespace) -> None:
-    response = agent.run(query)
+def _answer_once(
+    agent: TripMateAgent,
+    query: str,
+    args: argparse.Namespace,
+    history: list[Turn] | None = None,
+) -> list[Turn]:
+    """Answer one query and return the conversation to carry forward."""
+    response = agent.run(query, history=history)
 
     print()
     print(response.answer)
@@ -70,10 +76,16 @@ def _answer_once(agent: TripMateAgent, query: str, args: argparse.Namespace) -> 
         path.write_text(response.trace.to_json(), encoding="utf-8")
         print(f"[trace written to {path}]", file=sys.stderr)
 
+    return response.history
+
 
 def _repl(agent: TripMateAgent, args: argparse.Namespace) -> None:
     print("TripMate - ask about Tokyo, Reykjavik, Bangkok, or Barcelona.")
+    print("Follow-up questions work; type 'new' to start over.")
     print("Type 'exit' or Ctrl-D to quit.\n")
+    # Carried across turns so follow-ups ("and what about Bangkok?") resolve.
+    # The agent bounds how far back this reaches; see Config.max_history_turns.
+    history: list[Turn] = []
     while True:
         try:
             query = input("you > ").strip()
@@ -83,9 +95,17 @@ def _repl(agent: TripMateAgent, args: argparse.Namespace) -> None:
         if query.lower() in {"exit", "quit"}:
             print("Bye.")
             return
+        if query.lower() in {"new", "reset", "clear"}:
+            history = []
+            print("[conversation cleared]\n")
+            continue
         if not query:
             continue
-        _answer_once(agent, query, args)
+        try:
+            history = _answer_once(agent, query, args, history)
+        except KeyboardInterrupt:
+            # Abandon the in-flight question, keep the session and its history.
+            print("\n[interrupted]\n")
 
 
 def main(argv: list[str] | None = None) -> int:

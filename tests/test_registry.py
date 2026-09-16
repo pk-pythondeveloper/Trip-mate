@@ -81,3 +81,82 @@ def test_a_crashing_tool_becomes_an_error_outcome(registry):
 def test_dispatch_never_raises_on_malformed_arguments(registry):
     outcome = registry.dispatch("search_destination_guide", {"query": None})
     assert outcome.is_error is True
+
+
+# --- schema type enforcement ---------------------------------------------
+
+
+def test_a_wrongly_typed_argument_is_rejected_with_the_expected_type(registry):
+    """The model needs to be told the type it should have sent, to retry."""
+    outcome = registry.dispatch("get_weather_forecast", {"city": 42, "date_or_month": "May"})
+    assert outcome.is_error is True
+    assert "invalid_input" in outcome.content
+    assert "must be of type string" in outcome.content
+    assert "int" in outcome.content
+
+
+def test_a_null_argument_is_rejected_as_a_type_error(registry):
+    outcome = registry.dispatch("search_destination_guide", {"query": None})
+    assert outcome.is_error is True
+    assert "must be of type string" in outcome.content
+
+
+def test_a_boolean_does_not_pass_as_a_number():
+    """`bool` is an `int` subclass in Python; JSON schema does not agree."""
+    numeric = ToolRegistry(
+        [
+            Tool(
+                name="scale",
+                description="Scales.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"factor": {"type": "number"}},
+                    "required": ["factor"],
+                },
+                handler=lambda **kw: "ok",
+            )
+        ]
+    )
+    assert numeric.dispatch("scale", {"factor": True}).is_error is True
+    assert numeric.dispatch("scale", {"factor": 1.5}).is_error is False
+    assert numeric.dispatch("scale", {"factor": 2}).is_error is False
+
+
+def test_an_out_of_enum_value_is_rejected():
+    enumerated = ToolRegistry(
+        [
+            Tool(
+                name="pick",
+                description="Picks.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"unit": {"type": "string", "enum": ["c", "f"]}},
+                    "required": ["unit"],
+                },
+                handler=lambda **kw: "ok",
+            )
+        ]
+    )
+    outcome = enumerated.dispatch("pick", {"unit": "kelvin"})
+    assert outcome.is_error is True
+    assert "must be one of: c, f" in outcome.content
+    assert enumerated.dispatch("pick", {"unit": "f"}).is_error is False
+
+
+def test_a_schema_without_a_declared_type_is_left_to_the_handler():
+    """Absent `type` means we make no claim -- we must not invent one."""
+    untyped = ToolRegistry(
+        [
+            Tool(
+                name="anything",
+                description="Takes anything.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"value": {"description": "no type declared"}},
+                    "required": ["value"],
+                },
+                handler=lambda **kw: "ok",
+            )
+        ]
+    )
+    assert untyped.dispatch("anything", {"value": {"nested": 1}}).is_error is False
