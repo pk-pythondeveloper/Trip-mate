@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any
-from unittest.mock import Mock
+
 import pytest
 
 from tripmate.config import Config
